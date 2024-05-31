@@ -1,0 +1,78 @@
+import sqlite3
+import pandas as pd
+from datetime import datetime, timedelta
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+# Настройки email
+EMAIL_ADDRESS = 'your_email@example.com'
+EMAIL_PASSWORD = 'your_email_password'
+SMTP_SERVER = 'smtp.example.com'
+SMTP_PORT = 587
+
+# Подключение к базе данных
+conn = sqlite3.connect('finance.db')
+cursor = conn.cursor()
+
+# Создание таблицы для хранения данных
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS debts (
+    id INTEGER PRIMARY KEY,
+    counterparty TEXT,
+    amount REAL,
+    due_date TEXT,
+    type TEXT
+)
+''')
+conn.commit()
+
+# Функция для добавления новой записи
+def add_debt(counterparty, amount, due_date, debt_type):
+    cursor.execute('''
+    INSERT INTO debts (counterparty, amount, due_date, type) VALUES (?, ?, ?, ?)
+    ''', (counterparty, amount, due_date, debt_type))
+    conn.commit()
+
+# Функция для получения всех записей
+def get_all_debts():
+    cursor.execute('SELECT * FROM debts')
+    return cursor.fetchall()
+
+# Функция для отправки email
+def send_email(to_email, subject, body):
+    msg = MIMEMultipart()
+    msg['From'] = EMAIL_ADDRESS
+    msg['To'] = to_email
+    msg['Subject'] = subject
+
+    msg.attach(MIMEText(body, 'plain'))
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
+
+# Функция для проверки задолженности и отправки напоминаний
+def check_debts_and_send_reminders():
+    debts = get_all_debts()
+    today = datetime.now().date()
+
+    for debt in debts:
+        due_date = datetime.strptime(debt[3], '%Y-%m-%d').date()
+        if due_date <= today:
+            send_email(
+                'counterparty_email@example.com',
+                'Напоминание о платеже',
+                f'Уважаемый {debt[1]},\n\nНапоминаем вам о необходимости оплаты в размере {debt[2]} до {debt[3]}.'
+            )
+
+# Добавление примеров записей
+add_debt('Контрагент 1', 10000, '2024-06-01', 'credit')
+add_debt('Контрагент 2', 15000, '2024-06-15', 'debit')
+
+# Проверка задолженности и отправка напоминаний
+check_debts_and_send_reminders()
+
+# Закрытие подключения к базе данных
+conn.close()
